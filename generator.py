@@ -40,12 +40,13 @@ class Generator(nn.Module):
         """
         Embeds input and applies GRU one token at a time (seq_len = 1)
         """
-        # input dim                                             # batch_size
-        emb = self.embeddings(inp)                              # batch_size x embedding_dim
-        emb = emb.view(1, -1, self.embedding_dim)               # 1 x batch_size x embedding_dim
-        out, hidden = self.gru(emb, hidden)                     # 1 x batch_size x hidden_dim (out)
-        out = self.gru2out(out.view(-1, self.hidden_dim))       # batch_size x vocab_size
-        out = F.log_softmax(out, dim=1)
+        # input dim                                             # (32, ) batch_size
+        emb = self.embeddings(inp)                              # (32, 32) batch_size x embedding_dim
+        emb = emb.view(1, -1, self.embedding_dim)               # (1, 32, 32) 1 x batch_size x embedding_dim
+        out, hidden = self.gru(emb, hidden)                     # out: (1, 32, 32), hidden: (1, 32, 32) 1 x batch_size x hidden_dim (out)
+        out = self.gru2out(out.view(-1, self.hidden_dim))       # (32, 32) -> (32, 5000) batch_size x vocab_size
+        out = F.log_softmax(out, dim=1)                         # log soft max 임.
+        # print(out.max(), out.min())
         return out, hidden
 
     def sample(self, num_samples, start_letter=0):
@@ -56,7 +57,7 @@ class Generator(nn.Module):
             - samples: num_samples x max_seq_length (a sampled sequence in each row)
         """
 
-        samples = torch.zeros(num_samples, self.max_seq_len).type(torch.LongTensor)
+        samples = torch.zeros(num_samples, self.max_seq_len).type(torch.LongTensor) # (100, 20)
 
         h = self.init_hidden(num_samples)
         inp = autograd.Variable(torch.LongTensor([start_letter]*num_samples))
@@ -66,8 +67,8 @@ class Generator(nn.Module):
             inp = inp.cuda()
 
         for i in range(self.max_seq_len):
-            out, h = self.forward(inp, h)               # out: num_samples x vocab_size
-            out = torch.multinomial(torch.exp(out), 1)  # num_samples x 1 (sampling from each row)
+            out, h = self.forward(inp, h)   # (100, 5000),     (1, 100, 32)          # out: num_samples x vocab_size
+            out = torch.multinomial(torch.exp(out), 1)  # num_samples x 1 (sampling from each row) (100, 1)
             samples[:, i] = out.view(-1).data
 
             inp = out.view(-1)
@@ -85,15 +86,15 @@ class Generator(nn.Module):
             inp should be target with <s> (start letter) prepended
         """
 
-        loss_fn = nn.NLLLoss()
-        batch_size, seq_len = inp.size()
-        inp = inp.permute(1, 0)           # seq_len x batch_size
-        target = target.permute(1, 0)     # seq_len x batch_size
-        h = self.init_hidden(batch_size)
+        loss_fn = nn.NLLLoss() # https://ratsgo.github.io/deep%20learning/2017/09/24/loss/ 설명보기
+        batch_size, seq_len = inp.size()  # 32, 20
+        inp = inp.permute(1, 0)           # (20, 32) seq_len x batch_size
+        target = target.permute(1, 0)     # (20, 32) seq_len x batch_size
+        h = self.init_hidden(batch_size)  # (1, 32, 32)
 
         loss = 0
         for i in range(seq_len):
-            out, h = self.forward(inp[i], h)
+            out, h = self.forward(inp[i], h) #out (32, 5000), h (1,  32, 32)
             loss += loss_fn(out, target[i])
 
         return loss     # per batch
@@ -104,8 +105,8 @@ class Generator(nn.Module):
         Inspired by the example in http://karpathy.github.io/2016/05/31/rl/
 
         Inputs: inp, target
-            - inp: batch_size x seq_len
-            - target: batch_size x seq_len
+            - inp: batch_size x seq_len # (64, 20)
+            - target: batch_size x seq_len (64, 20)
             - reward: batch_size (discriminator reward for each sentence, applied to each token of the corresponding
                       sentence)
 
@@ -113,16 +114,30 @@ class Generator(nn.Module):
         """
 
         batch_size, seq_len = inp.size()
-        inp = inp.permute(1, 0)          # seq_len x batch_size
-        target = target.permute(1, 0)    # seq_len x batch_size
-        h = self.init_hidden(batch_size)
+        inp = inp.permute(1, 0)          # seq_len x batch_size (20, 64)
+        target = target.permute(1, 0)    # seq_len x batch_size (20, 64)
+        h = self.init_hidden(batch_size) # (1, 64, 32)
 
         loss = 0
         for i in range(seq_len):
-            out, h = self.forward(inp[i], h)
+            out, h = self.forward(inp[i], h) # 생성
             # TODO: should h be detached from graph (.detach())?
             for j in range(batch_size):
                 loss += -out[j][target.data[i][j]]*reward[j]     # log(P(y_t|Y_1:Y_{t-1})) * Q
 
         return loss/batch_size
 
+if __name__ == "__main__":
+    GEN_EMBEDDING_DIM = 32
+    GEN_HIDDEN_DIM = 32
+    DIS_EMBEDDING_DIM = 64
+    DIS_HIDDEN_DIM = 64
+    VOCAB_SIZE = 5000
+    MAX_SEQ_LEN = 20
+    CUDA = False
+    gen = Generator(GEN_EMBEDDING_DIM, GEN_HIDDEN_DIM, VOCAB_SIZE, MAX_SEQ_LEN, gpu=CUDA)
+
+    inp = torch.zeros((32, 20), dtype=torch.long)
+    target = torch.zeros((32, 20), dtype=torch.long)
+
+    gen.batchNLLLoss(inp, target)

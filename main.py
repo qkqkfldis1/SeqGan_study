@@ -43,8 +43,13 @@ def train_generator_MLE(gen, gen_opt, oracle, real_data_samples, epochs):
         total_loss = 0
 
         for i in range(0, POS_NEG_SAMPLES, BATCH_SIZE):
-            inp, target = helpers.prepare_generator_batch(real_data_samples[i:i + BATCH_SIZE], start_letter=START_LETTER,
+            inp, target = helpers.prepare_generator_batch(real_data_samples[i:i + BATCH_SIZE], start_letter=START_LETTER, # real_data_samples (10000, 20)
                                                           gpu=CUDA)
+            # inp: (32, 20), [[   0,   87, 4410, 3560, 1699, 3485, 1407, 4982, 3391, 1144, 2960, 3784,
+            #          2351, 3609,   92, 3391, 2187,  168, 4767, 4973],
+            # target: (32, 20)
+            #          tensor([[  87, 4410, 3560, 1699, 3485, 1407, 4982, 3391, 1144, 2960, 3784, 2351,
+            #          3609,   92, 3391, 2187,  168, 4767, 4973,  619],
             gen_opt.zero_grad()
             loss = gen.batchNLLLoss(inp, target)
             loss.backward()
@@ -76,7 +81,7 @@ def train_generator_PG(gen, gen_opt, oracle, dis, num_batches):
     for batch in range(num_batches):
         s = gen.sample(BATCH_SIZE*2)        # 64 works best
         inp, target = helpers.prepare_generator_batch(s, start_letter=START_LETTER, gpu=CUDA)
-        rewards = dis.batchClassify(target)
+        rewards = dis.batchClassify(target) # discriminator 가 실제 target 에 대해서 예측할 떄 어떻게 얻는 지 보고, 그게 reward
 
         gen_opt.zero_grad()
         pg_loss = gen.batchPGLoss(inp, target, rewards)
@@ -97,8 +102,8 @@ def train_discriminator(discriminator, dis_opt, real_data_samples, generator, or
     """
 
     # generating a small validation set before training (using oracle and generator)
-    pos_val = oracle.sample(100)
-    neg_val = generator.sample(100)
+    pos_val = oracle.sample(100) # (100, 20)
+    neg_val = generator.sample(100) # (100, 20)
     val_inp, val_target = helpers.prepare_discriminator_data(pos_val, neg_val, gpu=CUDA)
 
     for d_step in range(d_steps):
@@ -111,7 +116,7 @@ def train_discriminator(discriminator, dis_opt, real_data_samples, generator, or
             total_acc = 0
 
             for i in range(0, 2 * POS_NEG_SAMPLES, BATCH_SIZE):
-                inp, target = dis_inp[i:i + BATCH_SIZE], dis_target[i:i + BATCH_SIZE]
+                inp, target = dis_inp[i:i + BATCH_SIZE], dis_target[i:i + BATCH_SIZE] # inp: (32, 20), [1, 2, 1],
                 dis_opt.zero_grad()
                 out = discriminator.batchClassify(inp)
                 loss_fn = nn.BCELoss()
@@ -154,7 +159,7 @@ if __name__ == '__main__':
     # GENERATOR MLE TRAINING
     print('Starting Generator MLE Training...')
     gen_optimizer = optim.Adam(gen.parameters(), lr=1e-2)
-    train_generator_MLE(gen, gen_optimizer, oracle, oracle_samples, MLE_TRAIN_EPOCHS)
+    #train_generator_MLE(gen, gen_optimizer, oracle, oracle_samples, MLE_TRAIN_EPOCHS)
 
     # torch.save(gen.state_dict(), pretrained_gen_path)
     # gen.load_state_dict(torch.load(pretrained_gen_path))
@@ -162,7 +167,7 @@ if __name__ == '__main__':
     # PRETRAIN DISCRIMINATOR
     print('\nStarting Discriminator Training...')
     dis_optimizer = optim.Adagrad(dis.parameters())
-    train_discriminator(dis, dis_optimizer, oracle_samples, gen, oracle, 50, 3)
+   # train_discriminator(dis, dis_optimizer, oracle_samples, gen, oracle, 50, 3)
 
     # torch.save(dis.state_dict(), pretrained_dis_path)
     # dis.load_state_dict(torch.load(pretrained_dis_path))

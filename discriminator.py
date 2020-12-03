@@ -28,15 +28,15 @@ class Discriminator(nn.Module):
 
     def forward(self, input, hidden):
         # input dim                                                # batch_size x seq_len
-        emb = self.embeddings(input)                               # batch_size x seq_len x embedding_dim
-        emb = emb.permute(1, 0, 2)                                 # seq_len x batch_size x embedding_dim
-        _, hidden = self.gru(emb, hidden)                          # 4 x batch_size x hidden_dim
-        hidden = hidden.permute(1, 0, 2).contiguous()              # batch_size x 4 x hidden_dim
-        out = self.gru2hidden(hidden.view(-1, 4*self.hidden_dim))  # batch_size x 4*hidden_dim
+        emb = self.embeddings(input)                               # batch_size x seq_len x embedding_dim (32, 20, 32)
+        emb = emb.permute(1, 0, 2)                                 # seq_len x batch_size x embedding_dim (20, 32, 32)
+        _, hidden = self.gru(emb, hidden)                          # 4 x batch_size x hidden_dim # 여기서 hidden 은 init state. (4, 32, 32)
+        hidden = hidden.permute(1, 0, 2).contiguous()              # batch_size x 4 x hidden_dim (32, 4, 32)
+        out = self.gru2hidden(hidden.view(-1, 4*self.hidden_dim))  # batch_size x 4*hidden_dim # (32, 32)
         out = torch.tanh(out)
         out = self.dropout_linear(out)
         out = self.hidden2out(out)                                 # batch_size x 1
-        out = torch.sigmoid(out)
+        out = torch.sigmoid(out) # 확률값 뽑힘.
         return out
 
     def batchClassify(self, inp):
@@ -50,7 +50,7 @@ class Discriminator(nn.Module):
             - out: batch_size ([0,1] score)
         """
 
-        h = self.init_hidden(inp.size()[0])
+        h = self.init_hidden(inp.size()[0]) # (4, 32, 32)
         out = self.forward(inp, h)
         return out.view(-1)
 
@@ -68,3 +68,23 @@ class Discriminator(nn.Module):
         out = self.forward(inp, h)
         return loss_fn(out, target)
 
+if __name__ == "__main__":
+    VOCAB_SIZE = 5000
+    MAX_SEQ_LEN = 20
+    START_LETTER = 0
+    BATCH_SIZE = 32
+    MLE_TRAIN_EPOCHS = 100
+    ADV_TRAIN_EPOCHS = 50
+    POS_NEG_SAMPLES = 10000
+
+    GEN_EMBEDDING_DIM = 32
+    GEN_HIDDEN_DIM = 32
+    DIS_EMBEDDING_DIM = 64
+    DIS_HIDDEN_DIM = 64
+    CUDA = False
+    gen = Discriminator(GEN_EMBEDDING_DIM, GEN_HIDDEN_DIM, VOCAB_SIZE, MAX_SEQ_LEN, gpu=CUDA)
+
+    inp = torch.zeros((32, 20), dtype=torch.long)
+    target = torch.zeros((32, 20), dtype=torch.long)
+
+    gen.batchClassify(inp)
